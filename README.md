@@ -80,11 +80,18 @@ us-market-monitor\
 
 **2. `metrics.py` 交给 `signals.py` 的东西**
 
-一张指标表，每个指数一行：
+一张指标表，每个指数一行（三行：SP500 / NDX / VIX）：
 
-- `change_1d` / `change_5d` / `change_20d`：涨跌幅（百分比）
-- `ma20` / `ma50`：20 日、50 日移动平均线
-- `close_vs_ma20`：收盘价相对 MA20 偏离多少（百分比）
+| 列名 | 含义 |
+| --- | --- |
+| `last_date` | 最新数据的日期 |
+| `trading_days` | 参与计算的有效交易日数 |
+| `close` | 最新收盘价（VIX 的"水平"就是它自己的收盘价，所以不需要单独一列） |
+| `change_1d` / `change_5d` / `change_20d` | 涨跌幅（%） |
+| `ma20` / `ma50` | 20 日、50 日移动平均线 |
+| `close_vs_ma20` | 收盘价相对 MA20 偏离多少（%） |
+
+样本不足时这些列会是 `NaN` 而不是报错，由 `signals.py` 决定怎么处理。
 
 **3. `signals.py` 交给 `report.py` 的东西**
 
@@ -115,10 +122,11 @@ python run_daily.py
 
 Python 3.13.15 和依赖库已经装好，直接用 `python` 命令即可。
 
-> `fetch.py` 已经写完了。想单独验证取数，在**项目根目录**这样跑：
+> `fetch.py` 和 `metrics.py` 已经写完了。想单独验证某一层，在**项目根目录**用 `-m` 方式跑：
 >
 > ```powershell
-> python -m src.fetch
+> python -m src.fetch      # 只看取数：三个指数的收盘价
+> python -m src.metrics    # 看指标：涨跌幅、均线、相对均线偏离
 > ```
 >
 > 注意中间是 `-m src.fetch`。如果你直接写 `python src\fetch.py`，会报
@@ -141,7 +149,7 @@ Python 3.13.15 和依赖库已经装好，直接用 `python` 命令即可。
 ## 七、接下来的顺序（一次只写一个文件）
 
 1. ✅ `fetch.py` —— 已完成，能取回三个指数的真实日线并缓存到 `data\`
-2. `metrics.py` —— 在真实数据上算涨跌幅和均线
+2. ✅ `metrics.py` —— 已完成，算出涨跌幅、均线、相对均线偏离
 3. `signals.py` —— 定阈值、判异常、写理由
 4. `report.py` —— 出第一份 Markdown 日报
 5. 最后把 `run_daily.py` 串起来，再考虑定时任务和 Streamlit 界面
