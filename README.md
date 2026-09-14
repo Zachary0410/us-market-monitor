@@ -97,13 +97,25 @@ us-market-monitor\
 
 ```python
 {
-    "SP500": {"level": "watch", "reasons": ["单日下跌 1.62%，超过 1.5% 阈值"]},
-    "VIX":   {"level": "alert", "reasons": ["VIX 单日上涨 21.3%，超过 20% 阈值"]},
+    "SP500": {
+        "level": "alert",
+        "reasons": [
+            "单日下跌 3.40%，越过 3.0% 的警报线",
+            "收盘价低于 MA20 7.00%，越过 6.0% 的警报线",
+        ],
+    },
+    "NDX": {"level": "normal", "reasons": []},
+    "VIX": {"level": "watch", "reasons": ["今天没有取到 VIX 的数据，未参与判断"]},
 }
 ```
 
 `level` 只有三档：`normal`（正常）、`watch`（关注）、`alert`（警报）。
 `reasons` 是留给以后的你看的——判断异常时**必须**留下理由，否则你不知道它为什么报警。
+
+两个细节：
+
+- 阈值按标的分别设在 `config.py` 里。**某个标的没出现在某条规则的字典里，就表示这条规则对它不适用**（比如 VIX 不检查"偏离 MA20"，因为它天然就贴着均线大幅摆动）。
+- 即使某个标的今天根本没取到数据，它也会出现在结果里并标成"关注"——日报要如实写出"今天缺了谁"。
 
 **4. `report.py` 交给你**
 
@@ -122,11 +134,12 @@ python run_daily.py
 
 Python 3.13.15 和依赖库已经装好，直接用 `python` 命令即可。
 
-> `fetch.py` 和 `metrics.py` 已经写完了。想单独验证某一层，在**项目根目录**用 `-m` 方式跑：
+> 前三个模块已经写完了。想单独验证某一层，在**项目根目录**用 `-m` 方式跑：
 >
 > ```powershell
 > python -m src.fetch      # 只看取数：三个指数的收盘价
 > python -m src.metrics    # 看指标：涨跌幅、均线、相对均线偏离
+> python -m src.signals    # 看判断：触发了哪条规则、整体结论是什么
 > ```
 >
 > 注意中间是 `-m src.fetch`。如果你直接写 `python src\fetch.py`，会报
@@ -150,6 +163,6 @@ Python 3.13.15 和依赖库已经装好，直接用 `python` 命令即可。
 
 1. ✅ `fetch.py` —— 已完成，能取回三个指数的真实日线并缓存到 `data\`
 2. ✅ `metrics.py` —— 已完成，算出涨跌幅、均线、相对均线偏离
-3. `signals.py` —— 定阈值、判异常、写理由
+3. ✅ `signals.py` —— 已完成，按标的阈值判异常并写出理由
 4. `report.py` —— 出第一份 Markdown 日报
 5. 最后把 `run_daily.py` 串起来，再考虑定时任务和 Streamlit 界面
