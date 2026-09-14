@@ -1,0 +1,10 @@
+# 文本文件统一交给 Git 做换行符规范化
+* text=auto
+
+# 批处理必须是 CRLF：cmd.exe 解析括号块和循环时，LF 行尾会出错
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 源码用 LF
+*.py text eol=lf
+*.md text eol=lf

@@ -41,6 +41,7 @@ us-market-monitor\
 ├── run_daily.py         ★ 每天运行的入口
 ├── run_daily.bat        ★ 定时任务调用它（双击也能手动跑一次）
 ├── app.py               ★ 网页界面（streamlit run app.py）
+├── run_web.bat          ★ 双击打开网页（启动本地服务）
 ├── src\                 业务逻辑，一个文件一层
 │   ├── __init__.py      让 src 成为一个可以被 import 的包
 │   ├── fetch.py         取数层：外部数据 → 内部统一格式
@@ -70,6 +71,7 @@ us-market-monitor\
 | `run_daily.py` | 每日入口。读配置 → 取数 → 算指标 → 判异常 → 存历史 → 出报告。它自己不实现任何逻辑，只负责按顺序调用。 | 几乎不改 |
 | `run_daily.bat` | 定时任务实际调用的东西：切到项目目录 → 跑 `run_daily.py` → 把输出追加到 `logs\scheduled.log`，并把退出码原样传出去。双击它也能手动跑一次。 | 几乎不改（升级 Python 版本时要改里面的路径） |
 | `app.py` | Streamlit 网页。读 `data\history.csv` 和 `reports\*.md` 做展示，不算指标、不下判断；侧边栏的「立即更新」按钮会调用 `run_daily.main()`，复用同一条流水线。 | 想换页面布局时 |
+| `run_web.bat` | 双击它打开网页：启动本地服务并打开浏览器。**窗口关掉服务就停**。已经有一个服务在跑时会提示"ALREADY running"，不会重复启动。 | 几乎不改（升级 Python 版本时要改里面的路径） |
 | `src/fetch.py` | **唯一会上网的文件**。负责请求数据、校验数据、整理成统一格式、存一份 CSV 缓存。 | 换数据源时 |
 | `src/metrics.py` | 把"一堆日线"变成"几个关键数字"：1日/5日/20日涨跌幅、MA20/MA50、收盘价偏离均线多少、VIX 的绝对水平和单日变化。 | 想加新指标时 |
 | `src/signals.py` | 项目的"大脑"。拿 `config.py` 里的阈值去比对指标，输出 `normal / watch / alert` 三档结论，并写清楚**为什么**这么判。 | 想改判断规则时 |
@@ -257,14 +259,26 @@ python -c "from src import history; d = history.load_history(); print(d.filter(l
 
 ## 八、网页界面（Streamlit）
 
-在终端里：
+两种打开方式，效果一样：
+
+**方式一：双击 `run_web.bat`**（最省事）
+
+会弹出一个黑色窗口，浏览器自动打开页面。**用的时候别关那个黑窗口**——它就是服务本身；按 Ctrl+C 或直接关掉窗口，网页就停了。
+
+**方式二：在终端里敲命令**
 
 ```powershell
 cd F:\codex\2026-09-14\new-chat-4\outputs\us-market-monitor
 streamlit run app.py
 ```
 
-浏览器会自动打开 `http://localhost:8501`。**关掉终端里那个进程，网页就停了**——它不是常驻服务，想看的时候启动一下就行。
+两种方式都是"启动一个本地服务"，所以要记住三件事：
+
+- **它不是常驻的**：关掉窗口/终端，网页就打不开了（浏览器会报 `ERR_CONNECTION_REFUSED`）。想再打开，就再双击一次 `run_web.bat`。
+- **已经有一个在跑时**，双击会提示"ALREADY running"，不会重复启动。
+- **定时任务不会帮你启动网页**，它只管每天写数据文件。
+
+> 小知识：Streamlit 第一次运行会在控制台问"要不要留邮箱订阅"，然后**卡在那里等输入**，服务就起不来。我已经用一个空邮箱的配置文件（`%USERPROFILE%\.streamlit\credentials.toml`）把这个提问永久关掉了。万一换台电脑又看到 `Email:`，直接按回车就行。
 
 页面上有五块：
 
