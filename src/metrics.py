@@ -71,16 +71,22 @@ def moving_average(closes: pd.Series, window: int) -> float:
     return float(closes.tail(window).mean())
 
 
-def build_metrics(prices: dict[str, pd.DataFrame]) -> pd.DataFrame:
+def build_metrics(prices: dict[str, pd.DataFrame], as_of=None) -> pd.DataFrame:
     """把 {名字: 日线 DataFrame} 合成一张指标表：每个标的一行。
 
     返回的 DataFrame：
         index  标的内部名字（SP500 / NDX / VIX）
         列     见 METRIC_COLUMNS
+
+    as_of   只看这个日期（含）之前的数据。正常跑日报用默认的 None（看最新）。
+            只有历史回填才会用到它——"假如那天就收工，当时的指标是多少"。
     """
     rows: dict[str, dict] = {}
 
     for name, frame in prices.items():
+        if as_of is not None:
+            frame = frame.loc[:as_of]
+
         closes = frame["close"].astype(float).dropna()
         if closes.empty:
             continue

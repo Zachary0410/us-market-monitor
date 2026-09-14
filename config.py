@@ -4,7 +4,9 @@
 想改监测对象、改异常阈值、改文件位置，只动这一个文件。
 """
 
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 # ---------- 路径 ----------
 PROJECT_DIR = Path(__file__).resolve().parent
@@ -57,3 +59,17 @@ NDX_SP500_GAP_PCT = {"watch": 2.0, "alert": 3.5}
 REPORT_TITLE = "美股市场日报"
 TIMEZONE = "Asia/Hong_Kong"
 DATA_SOURCE_NOTE = "Yahoo Finance 日线（原始图表接口，免费、不需要 API key）"
+
+
+# ---------- 时间 ----------
+# 为什么把"现在几点"也放这里：日报的文件名、历史表的日期、报告里的时间戳
+# 必须用同一个时区，否则跨日的时候会错开一天。
+
+def now() -> datetime:
+    """当前时间（按 TIMEZONE）。"""
+    return datetime.now(ZoneInfo(TIMEZONE))
+
+
+def today():
+    """今天（按 TIMEZONE）。"""
+    return now().date()

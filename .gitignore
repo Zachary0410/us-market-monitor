@@ -9,6 +9,7 @@ venv/
 # 本项目自己产生的数据与报告（属于产物，不进版本库）
 data/*.csv
 reports/*.md
+reports/*.png
 !data/.gitkeep
 !reports/.gitkeep
 
