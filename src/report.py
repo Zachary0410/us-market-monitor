@@ -58,12 +58,14 @@ def _count_levels(verdicts: dict[str, dict]) -> dict[str, int]:
     return counts
 
 
-def render_markdown(table: pd.DataFrame, verdicts: dict[str, dict], today=None) -> str:
+def render_markdown(table: pd.DataFrame, verdicts: dict[str, dict], today=None, data_note: str | None = None) -> str:
     """拼出日报正文。
 
     table    metrics.build_metrics() 的输出
     verdicts signals.evaluate_all() 的输出
     today    报告日期，默认取 config.TIMEZONE 下的今天（测试时可以传进来）
+    data_note 关于数据本身的提醒，比如"这次用的是本地缓存、不是最新数据"。
+              只要不是最新数据，就一定要写出来——报告宁可难看，不能骗人。
     """
     report_day = today or _now().date()
     counts = _count_levels(verdicts)
@@ -124,6 +126,9 @@ def render_markdown(table: pd.DataFrame, verdicts: dict[str, dict], today=None) 
     lines.append("## 数据说明")
     lines.append("")
     lines.append(f"- 数据来源：{config.DATA_SOURCE_NOTE}")
+
+    if data_note:
+        lines.append(f"- **注意**：{data_note}")
 
     if not table.empty and "last_date" in table.columns:
         dates = sorted({str(value) for value in table["last_date"].dropna()})
