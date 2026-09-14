@@ -16,6 +16,10 @@
 唯一的例外是"立即更新"按钮——它直接调用 run_daily.main()，复用同一条流水线，
 而不是在网页里另写一套取数逻辑。这样网页和定时任务看到的永远是同一份数据。
 
+部署到云端也能直接跑：云端容器里没有 data\\history.csv（而且容器重启就清空），
+所以启动时发现没数据、或者数据太旧，就现场跑一遍流水线把 250 天重算出来。
+本地运行时这个分支基本不会走到——文件每天都在。
+
 注意：这个文件是脚本不是库，所以结尾直接调用 main()，没有 if __name__ 那层保护。
 """
 
@@ -34,7 +38,35 @@ WINDOW_OPTIONS = {
     "最近 90 个交易日": 90,
     "最近 250 个交易日（约一年）": 250,
 }
+DEFAULT_WINDOW = "最近 90 个交易日"
 LEVEL_LABELS = signals.LEVEL_LABELS
+
+# 缓存的存活时间：过了这段时间，下一次访问会重新读文件
+CACHE_TTL = "30m"
+
+# 历史表最新一行超过这么多天，就算"过期"，需要重新生成
+FRESH_DAYS = 4
+
+
+@st.cache_data(ttl=CACHE_TTL, show_spinner="正在准备数据……")
+def load_history_data() -> pd.DataFrame:
+    """读历史表；没有数据或者数据过期时，现场跑一遍完整流水线再读。
+
+    为什么要这样写：部署到云端之后，容器里没有你本地的 data\\history.csv，
+    而且容器的磁盘重启就清空。这一段就是云端的"自愈"逻辑——我们的 backfill
+    本来就能从行情数据把过去 250 天重算出来，正好用得上。
+
+    本地运行时 history.csv 一直在，所以这里绝大多数时候只是读一个文件。
+    加缓存是为了避免"每次点击都重新读一遍、云端还会顺手重抓数据"。
+    """
+    data = history.load_history()
+    if not data.empty:
+        age_days = (config.today() - data.index.max().date()).days
+        if age_days <= FRESH_DAYS:
+            return data
+
+    run_daily.main()          # 取数 → 算指标 → 判异常 → 存历史 → 出报告
+    return history.load_history()
 
 
 def level_label(row: pd.Series, name: str) -> str:
@@ -56,6 +88,7 @@ def show_sidebar(data: pd.DataFrame) -> None:
                     code = run_daily.main()
             st.session_state["run_log"] = buffer.getvalue()
             st.session_state["run_code"] = code
+            st.cache_data.clear()   # 清掉缓存，页面才会去读刚生成的新数据
             st.rerun()
 
         code = st.session_state.get("run_code")
@@ -82,7 +115,7 @@ def main() -> None:
     st.set_page_config(page_title="美股市场监测", page_icon="📈", layout="wide")
     st.title("美股市场监测")
 
-    data = history.load_history()
+    data = load_history_data()
     show_sidebar(data)
 
     if data.empty:
@@ -110,7 +143,8 @@ def main() -> None:
 
     # ---------- 走势 ----------
     st.subheader("走势")
-    window = st.radio("看多长时间", list(WINDOW_OPTIONS), index=1, horizontal=True)
+    window = st.segmented_control("看多长时间", list(WINDOW_OPTIONS), default=DEFAULT_WINDOW)
+    window = window or DEFAULT_WINDOW     # 取消选中时回到默认值
     recent = data.tail(WINDOW_OPTIONS[window])
 
     tabs = st.tabs([*config.SYMBOLS, "标普 vs 纳指"])

@@ -76,6 +76,25 @@ def _to_trading_dates(timestamps) -> pd.DatetimeIndex:
     return pd.DatetimeIndex(new_york)
 
 
+def _drop_unfinished_session(frame: pd.DataFrame) -> pd.DataFrame:
+    """丢掉"今天还没收盘"的那根日线。
+
+    为什么需要这一步：美股盘前或盘中，Yahoo 有时已经返回当天的数据，而且各标的
+    进度不一致——VIX 常常比股票指数更早更新。结果是三个标的混着两个日期，
+    涨跌幅也会算错（比如 VIX 显示"一天涨 12%"，其实那根线还没走完）。
+
+    规则很简单：美东时间还没过 16:15，当天那根日线一律不要。
+    注意这对每天 06:00（香港）的定时任务没有任何影响——那时美东早就收盘了。
+    """
+    now_new_york = pd.Timestamp.now(tz="America/New_York")
+    market_closed = (now_new_york.hour, now_new_york.minute) >= (16, 15)
+    if market_closed:
+        return frame
+
+    today_new_york = now_new_york.normalize().tz_localize(None)
+    return frame[frame.index < today_new_york]
+
+
 def _request(symbol: str, days: int, timeout: int) -> dict:
     """真正发网络请求的地方，带简单重试。"""
     url = CHART_URL.format(symbol=symbol.replace("^", "%5E"))
@@ -135,6 +154,7 @@ def fetch_index(symbol: str, days: int = config.HISTORY_DAYS, timeout: int = con
     frame = frame.dropna(subset=["close"])               # 去掉停牌、数据缺失的行
     frame = frame[~frame.index.duplicated(keep="last")]  # 去掉重复日期
     frame = frame.sort_index()                           # 保证从旧到新
+    frame = _drop_unfinished_session(frame)              # 丢掉还没收盘的今天
 
     if frame.empty:
         raise FetchError(f"{symbol}: 去掉空数据后一条都不剩")

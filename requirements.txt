@@ -1,8 +1,8 @@
-# 第一阶段：只需要这两个库
-# 本机已经装好。换电脑重装时运行：python -m pip install -r requirements.txt
-pandas>=3.0
-requests>=2.30
-matplotlib>=3.9
-
-# 网页界面（app.py 需要）
-streamlit>=1.63
+# 换电脑重装时运行：python -m pip install -r requirements.txt
+#
+# 版本写死（==）而不是写 >=，是为了让"本地能跑"等于"云端能跑"：
+# 云平台会按这个文件装依赖，如果写成 >=，它可能装到更新的版本而把页面搞崩。
+pandas==3.0.5
+requests==2.34.2
+matplotlib==3.11.2
+streamlit==1.63.0
