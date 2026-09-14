@@ -56,3 +56,4 @@ NDX_SP500_GAP_PCT = {"watch": 2.0, "alert": 3.5}
 # ---------- 报告 ----------
 REPORT_TITLE = "美股市场日报"
 TIMEZONE = "Asia/Hong_Kong"
+DATA_SOURCE_NOTE = "Yahoo Finance 日线（原始图表接口，免费、不需要 API key）"

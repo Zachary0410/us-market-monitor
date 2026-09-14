@@ -119,7 +119,11 @@ us-market-monitor\
 
 **4. `report.py` 交给你**
 
-`reports\2026-09-14.md`，以及终端上的一次打印。
+`reports\2026-09-14.md`，以及终端上的一次打印。四段固定结构：
+
+`整体结论` → `关键数字表` → `异常与关注` → `数据说明`
+
+同一天重复运行会覆盖同名文件——日报本来就该"一天一份"，重跑一次就刷新一次。
 
 ---
 
@@ -140,6 +144,7 @@ Python 3.13.15 和依赖库已经装好，直接用 `python` 命令即可。
 > python -m src.fetch      # 只看取数：三个指数的收盘价
 > python -m src.metrics    # 看指标：涨跌幅、均线、相对均线偏离
 > python -m src.signals    # 看判断：触发了哪条规则、整体结论是什么
+> python -m src.report     # 走完整流程，生成 reports\YYYY-MM-DD.md
 > ```
 >
 > 注意中间是 `-m src.fetch`。如果你直接写 `python src\fetch.py`，会报
@@ -164,5 +169,6 @@ Python 3.13.15 和依赖库已经装好，直接用 `python` 命令即可。
 1. ✅ `fetch.py` —— 已完成，能取回三个指数的真实日线并缓存到 `data\`
 2. ✅ `metrics.py` —— 已完成，算出涨跌幅、均线、相对均线偏离
 3. ✅ `signals.py` —— 已完成，按标的阈值判异常并写出理由
-4. `report.py` —— 出第一份 Markdown 日报
-5. 最后把 `run_daily.py` 串起来，再考虑定时任务和 Streamlit 界面
+4. ✅ `report.py` —— 已完成，能出 Markdown 日报
+5. `run_daily.py` —— 最后把整条流水线串起来（现在四个模块各自都能跑，但还没有"一键全跑"）
+6. 再考虑定时任务和 Streamlit 界面
