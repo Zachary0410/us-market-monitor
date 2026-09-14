@@ -1,0 +1,19 @@
+# Python 运行时产生的缓存
+__pycache__/
+*.py[cod]
+
+# 以后可能会用的虚拟环境
+.venv/
+venv/
+
+# 本项目自己产生的数据与报告（属于产物，不进版本库）
+data/*.csv
+reports/*.md
+!data/.gitkeep
+!reports/.gitkeep
+
+# 编辑器与系统文件
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

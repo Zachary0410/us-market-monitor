@@ -1,0 +1,7 @@
+# 第一阶段：只需要这两个库
+# 本机已经装好。换电脑重装时运行：python -m pip install -r requirements.txt
+pandas>=3.0
+requests>=2.30
+
+# 第二阶段（可选的网页界面）再打开下面这行
+# streamlit>=1.63
