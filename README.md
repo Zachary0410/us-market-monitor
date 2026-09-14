@@ -227,7 +227,7 @@ Unregister-ScheduledTask -TaskName '美股市场监测-日报' -Confirm:$false
 
 | 列 | 含义 |
 | --- | --- |
-| `date` | 日期（香港时间，和日报文件名是同一天） |
+| `date` | **交易日**（美东收盘那天）。注意它不是运行日期——程序在香港早上跑，运行日期会比数据日期晚一天 |
 | `SP500_close` / `NDX_close` / `VIX_close` | 当天收盘价 |
 | `SP500_change_1d` 等 | 当天涨跌幅（%） |
 | `SP500_close_vs_ma20` 等 | 当天收盘相对 MA20 的偏离（%） |

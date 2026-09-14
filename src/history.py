@@ -7,9 +7,12 @@
 文件格式（宽表，一天一行，用 Excel 直接打开就能看）
     date | SP500_close | SP500_change_1d | SP500_close_vs_ma20 | SP500_level | NDX_... | VIX_...
 
+    - date 用的是"数据日期"，也就是美东收盘的那一天，不是运行日期。
+      因为程序在香港早上跑，比美东晚一天——要是用运行日期，图上会出现周六
+      这种根本不是交易日的点。
     - 列名按 config.SYMBOLS 自动生成：以后加标的，这个文件不用改。
     - level 列存的是 normal / watch / alert 三个英文键（中文名在 signals.LEVEL_LABELS 里）。
-    - 同一天重复运行会覆盖当天那一行，不会堆出一堆重复数据。
+    - 同一个交易日重复运行会覆盖那一行，不会堆出重复数据。
 
 对外提供的函数
     append_snapshot(table, verdicts)   写入今天这一行，返回文件路径
@@ -78,15 +81,27 @@ def _save(new_rows: pd.DataFrame):
     return path
 
 
+def _snapshot_day(table: pd.DataFrame, fallback):
+    """这一行该记到哪个交易日。
+
+    优先用指标表里的 last_date（数据日期）；表是空的才退回到运行日期。
+    """
+    if "last_date" in table.columns:
+        dates = table["last_date"].dropna()
+        if not dates.empty:
+            return pd.Timestamp(max(dates))
+    return pd.Timestamp(fallback)
+
+
 def append_snapshot(table: pd.DataFrame, verdicts: dict[str, dict], today=None):
-    """把今天这一行追加进历史表，返回文件路径。"""
-    day = pd.Timestamp(today or config.today())
+    """把最新一天的快照写进历史表（同一个交易日重复运行会覆盖），返回文件路径。"""
+    day = _snapshot_day(table, today or config.today())
     new_row = pd.DataFrame([_build_row(table, verdicts, day)], index=[day])
     new_row.index.name = "date"
     return _save(new_row)
 
 
-def backfill(prices: dict[str, pd.DataFrame], days: int = 90, today=None) -> int:
+def backfill(prices: dict[str, pd.DataFrame], days: int = 90) -> int:
     """用刚取回来的日线数据，把过去 days 个交易日的数字补齐，返回补了多少天。
 
     为什么需要它：如果只从今天开始攒，你得等两三个月才能看到一张像样的走势图。
@@ -101,12 +116,9 @@ def backfill(prices: dict[str, pd.DataFrame], days: int = 90, today=None) -> int
     if not calendar:
         return 0
 
-    latest = pd.Timestamp(today or config.today())
     rows = []
 
     for day in calendar[-days:]:
-        if day >= latest:      # 今天那一行交给 append_snapshot 写，避免重复
-            continue
         table = metrics.build_metrics(prices, as_of=day)
         verdicts = signals.evaluate_all(table)
         rows.append(pd.DataFrame([_build_row(table, verdicts, day)], index=[day]))
