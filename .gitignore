@@ -12,6 +12,9 @@ reports/*.md
 !data/.gitkeep
 !reports/.gitkeep
 
+# 定时任务的运行日志
+logs/
+
 # 编辑器与系统文件
 .vscode/
 .idea/
