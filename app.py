@@ -49,7 +49,7 @@ FRESH_DAYS = 4
 
 
 @st.cache_data(ttl=CACHE_TTL, show_spinner="正在准备数据……")
-def load_history_data() -> pd.DataFrame:
+def load_history_data(fingerprint: tuple) -> pd.DataFrame:
     """读历史表；没有数据或者数据过期时，现场跑一遍完整流水线再读。
 
     为什么要这样写：部署到云端之后，容器里没有你本地的 data\\history.csv，
@@ -57,7 +57,15 @@ def load_history_data() -> pd.DataFrame:
     本来就能从行情数据把过去 250 天重算出来，正好用得上。
 
     本地运行时 history.csv 一直在，所以这里绝大多数时候只是读一个文件。
-    加缓存是为了避免"每次点击都重新读一遍、云端还会顺手重抓数据"。
+
+    fingerprint 这个参数是故意加的，而且函数体里用不到它：Streamlit 会把所有
+    参数算进缓存的钥匙，所以历史表一被改写（定时任务跑完、或你手动跑了
+    run_daily.bat），指纹就变了，缓存自动失效，页面立刻是新数据。
+
+    两种机制各管一件事：
+        指纹   文件一改就立刻生效（本地用得上）
+        TTL    最多每 30 分钟重新检查一次"数据是不是过期了"
+               （云端容器里没人写文件，只能靠它定期复查）
     """
     data = history.load_history()
     if not data.empty:
@@ -115,7 +123,7 @@ def main() -> None:
     st.set_page_config(page_title="美股市场监测", page_icon="📈", layout="wide")
     st.title("美股市场监测")
 
-    data = load_history_data()
+    data = load_history_data(history.fingerprint())
     show_sidebar(data)
 
     if data.empty:

@@ -18,6 +18,7 @@
     append_snapshot(table, verdicts)   写入今天这一行，返回文件路径
     backfill(prices, days)             用日线把过去几天的数字补齐（第一次运行时用）
     load_history()                     读回全部历史，没有文件就返回空表
+    fingerprint()                      历史表的"指纹"，网页拿它当缓存钥匙
 
 单独测试本文件：
     cd F:\\codex\\2026-09-14\\new-chat-4\\outputs\\us-market-monitor
@@ -64,6 +65,23 @@ def load_history() -> pd.DataFrame:
     frame = pd.read_csv(path, index_col="date", parse_dates=True)
     frame.index.name = "date"
     return frame.sort_index()
+
+
+def fingerprint() -> tuple[float, int]:
+    """历史表的"指纹"：文件最后修改时间 + 大小。
+
+    用途：网页把它当作缓存的钥匙。文件一被重写（定时任务跑完、或你手动跑
+    run_daily.bat），指纹就变了，缓存自动失效，页面立刻能看到新数据——
+    不用等缓存过期，也不用去点"立即更新"。
+
+    文件不存在时返回 (0.0, 0)。这也是一个有效的指纹，含义是"还没有数据"。
+    """
+    path = history_path()
+    if not path.exists():
+        return (0.0, 0)
+
+    info = path.stat()
+    return (info.st_mtime, info.st_size)
 
 
 def _save(new_rows: pd.DataFrame):
