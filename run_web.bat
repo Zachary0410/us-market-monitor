@@ -56,8 +56,11 @@ pause
 exit /b 0
 
 :already_running
-echo The web page is ALREADY running.
-echo Open this address in your browser:
+echo The web page is ALREADY running - no need to start it again.
+echo Opening it in your browser now ...
+start "" "http://localhost:8501"
+echo.
+echo If nothing opens by itself, visit this address by hand:
 echo     http://localhost:8501
 echo.
 echo To restart it, stop the old server first.
