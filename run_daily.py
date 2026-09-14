@@ -23,6 +23,9 @@ import config
 
 
 def main() -> int:
+    # 每次运行先打一条时间戳，方便在 logs\scheduled.log 里分辨哪段是哪一次
+    print(f"===== {config.now().strftime('%Y-%m-%d %H:%M:%S')} =====")
+
     # ---------- 1. 取数 ----------
     print("[1/5] 取数 ...")
     prices: dict = {}

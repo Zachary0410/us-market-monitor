@@ -21,8 +21,11 @@ cd /d "%~dp0"
 
 if not exist "logs" mkdir "logs"
 
+rem Just a blank separator. The timestamp is printed by run_daily.py instead:
+rem %date% contains a Chinese weekday, and mixing that with UTF-8 output
+rem garbles the log. Do NOT add "chcp 65001" here either - cmd's append
+rem redirection drops bytes when that codepage is active.
 echo. >> "logs\scheduled.log"
-echo ===== %date% %time% ===== >> "logs\scheduled.log"
 
 rem Write UTF-8 so the log is readable in VS Code
 set PYTHONIOENCODING=utf-8
