@@ -19,6 +19,7 @@
     backfill(prices, days)             用日线把过去几天的数字补齐（第一次运行时用）
     load_history()                     读回全部历史，没有文件就返回空表
     fingerprint()                      历史表的"指纹"，网页拿它当缓存钥匙
+    snapshot_day(table, fallback)      这一批数据属于哪个交易日（报告命名也用它）
 
 单独测试本文件：
     cd F:\\codex\\2026-09-14\\new-chat-4\\outputs\\us-market-monitor
@@ -99,21 +100,30 @@ def _save(new_rows: pd.DataFrame):
     return path
 
 
-def _snapshot_day(table: pd.DataFrame, fallback):
-    """这一行该记到哪个交易日。
+def snapshot_day(table: pd.DataFrame, fallback) -> "datetime.date":
+    """这一批数据属于哪个交易日。
 
     优先用指标表里的 last_date（数据日期）；表是空的才退回到运行日期。
+
+    全项目统一用它来回答"今天是哪天"：历史表的行、日报的文件名、走势图的文件名，
+    都要用交易日，不能用运行日期——程序在香港早上跑，运行日期比交易日晚一天，
+    混着用就会出现"页面顶部写 9-11、历史日报却写 9-15"这种前后矛盾。
+
+    返回的是 datetime.date（纯日期，没有时分秒）。带时分秒的话拼进文件名会变成
+    "2026-09-14 00:00:00.md"，Windows 会直接拒绝。
     """
     if "last_date" in table.columns:
         dates = table["last_date"].dropna()
         if not dates.empty:
-            return pd.Timestamp(max(dates))
-    return pd.Timestamp(fallback)
+            return pd.Timestamp(max(dates)).date()
+    return pd.Timestamp(fallback).date()
 
 
 def append_snapshot(table: pd.DataFrame, verdicts: dict[str, dict], today=None):
     """把最新一天的快照写进历史表（同一个交易日重复运行会覆盖），返回文件路径。"""
-    day = _snapshot_day(table, today or config.today())
+    # 表里的索引统一用 pd.Timestamp（要和读回来的旧数据比较、排序），
+    # 而 snapshot_day() 返回纯日期给文件名用——两者别混。
+    day = pd.Timestamp(snapshot_day(table, today or config.today()))
     new_row = pd.DataFrame([_build_row(table, verdicts, day)], index=[day])
     new_row.index.name = "date"
     return _save(new_row)

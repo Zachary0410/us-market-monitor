@@ -82,17 +82,23 @@ def main() -> int:
     # ---------- 5. 出报告 ----------
     print("[5/5] 生成日报 ...\n")
 
+    # 报告按"交易日"命名，和历史表、页面顶部走同一个口径。
+    # 用运行日期的话，香港早上跑出来的报告会比数据日期晚一天，看着像前后矛盾。
+    report_day = history.snapshot_day(table, config.today())
+
     chart_file = None
     try:
-        chart_file = chart.render_chart(history.load_history()).name
+        chart_file = chart.render_chart(history.load_history(), today=report_day).name
         print(f"      走势图：{chart_file}")
     except Exception as exc:  # 画图只是锦上添花，不能让它拖垮整份日报
         print(f"      跳过走势图：{exc}")
 
     note = f"以下标的用的是本地缓存、不是最新数据：{'、'.join(from_cache)}" if from_cache else None
-    text = report.render_markdown(table, verdicts, data_note=note, chart_file=chart_file)
+    text = report.render_markdown(
+        table, verdicts, today=report_day, data_note=note, chart_file=chart_file
+    )
     report.print_console(text)
-    path = report.save_report(text)
+    path = report.save_report(text, today=report_day)
     print(f"\n已写入：{path}")
     return 0
 

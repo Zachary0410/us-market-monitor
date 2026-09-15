@@ -158,7 +158,8 @@ def render_markdown(
 def save_report(text: str, today=None):
     """把日报写入 reports\\YYYY-MM-DD.md，返回文件路径。
 
-    同一天重复运行会覆盖同名文件——日报本来就该"一天一份"，重跑一次就刷新一次。
+    文件名里的日期是**交易日**（和历史表、走势图统一口径），不是运行日期。
+    同一个交易日重复运行会覆盖同名文件——一天一份，重跑一次就刷新一次。
     """
     report_day = today or config.today()
     config.REPORT_DIR.mkdir(parents=True, exist_ok=True)
