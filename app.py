@@ -1,71 +1,58 @@
-"""Streamlit 网页：把 data\\history.csv 里的历史做成一个能点的页面。
+"""Streamlit Dashboard：10 秒看清今天的市场。
 
 用法：
     cd F:\\codex\\2026-09-14\\new-chat-4\\outputs\\us-market-monitor
-    streamlit run app.py
-    （浏览器会自动打开 http://localhost:8501，关掉终端里的进程就停止了）
+    streamlit run app.py        （或者直接双击 run_web.bat）
 
-页面有五块：
-    顶部结论卡片   三个标的的最新收盘、单日涨跌、结论
-    走势           可选时间窗口，一个标的一个标签页，另加一个"标普 vs 纳指"对比
-    历史日报       列出 reports\\ 下的日报，选一天看（含走势图）
-    原始数据       历史表的最后 20 行
-    侧边栏         一个"立即更新"按钮 + 上次运行的输出
+页面从上到下按"每天要看的顺序"排：
+    1. 顶部      标题 + 最新交易日 / 数据更新时间 + 立即更新
+    2. KPI 卡片  标普 500 / 纳斯达克 100 / VIX：当前值、涨跌额、涨跌幅、5 日、20 日、迷你走势
+    3. 市场状态  风险等级 + 风险评分 + 评分构成；右边是"今日需要关注"
+    4. 趋势      1M / 3M / 1Y 区间，SP500 / NDX / VIX 切换，可叠加 MA20/50/200，鼠标悬停看数值
+    5. 历史日报  每个交易日一张紧凑卡片，点"查看"才展开完整报告
 
-它只做展示：读 history.csv 和 reports\\*.md，不算指标、不下判断。
-唯一的例外是"立即更新"按钮——它直接调用 run_daily.main()，复用同一条流水线，
-而不是在网页里另写一套取数逻辑。这样网页和定时任务看到的永远是同一份数据。
-
-部署到云端也能直接跑：云端容器里没有 data\\history.csv（而且容器重启就清空），
-所以启动时发现没数据、或者数据太旧，就现场跑一遍流水线把 250 天重算出来。
-本地运行时这个分支基本不会走到——文件每天都在。
-
-注意：这个文件是脚本不是库，所以结尾直接调用 main()，没有 if __name__ 那层保护。
+数据约定
+    页面只读 data\\history.csv 和 reports\\*。数据由 run_daily.py（或点"立即更新"）生产，
+    这里不改动任何数据获取逻辑；市场状态和风险评分是 src\\market_state.py 现算的展示层结果，
+    不写回文件、不影响日报流水线。
 """
 
 import contextlib
 import io
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
 import config
 import run_daily
-from src import history, signals
+from src import history, market_state, signals
 
-WINDOW_OPTIONS = {
-    "最近 30 个交易日": 30,
-    "最近 90 个交易日": 90,
-    "最近 250 个交易日（约一年）": 250,
-}
-DEFAULT_WINDOW = "最近 90 个交易日"
+# ---------- 常量 ----------
+CACHE_TTL = "30m"                 # 缓存的兜底寿命（本地靠文件指纹失效，云端靠它定期复查）
+FRESH_DAYS = 4                    # 历史表超过这么多天就认为过期，自动重跑流水线
+STALE_DAYS = 5                    # 超过这么多天就在页面上提醒"数据可能偏旧"
+
+WINDOWS = {"1M": 21, "3M": 63, "1Y": 250}
+DEFAULT_WINDOW = "3M"
+TREND_OPTIONS = ["SP500", "NDX", "VIX", "对比"]
+MA_OPTIONS = ["MA20", "MA50", "MA200"]
+
+SYMBOL_COLORS = {"SP500": "#1F6FEB", "NDX": "#1A7F37", "VIX": "#D1242F"}
+MA_COLORS = {"MA20": "#E8A33D", "MA50": "#8250DF", "MA200": "#57606A"}
 LEVEL_LABELS = signals.LEVEL_LABELS
 
-# 缓存的存活时间：过了这段时间，下一次访问会重新读文件
-CACHE_TTL = "30m"
 
-# 历史表最新一行超过这么多天，就算"过期"，需要重新生成
-FRESH_DAYS = 4
-
-
+# ---------- 数据（保持原有逻辑不变） ----------
 @st.cache_data(ttl=CACHE_TTL, show_spinner="正在准备数据……")
 def load_history_data(fingerprint: tuple) -> pd.DataFrame:
-    """读历史表；没有数据或者数据过期时，现场跑一遍完整流水线再读。
+    """读历史表；没有数据或数据太旧时，现场跑一遍完整流水线再读。
 
-    为什么要这样写：部署到云端之后，容器里没有你本地的 data\\history.csv，
-    而且容器的磁盘重启就清空。这一段就是云端的"自愈"逻辑——我们的 backfill
-    本来就能从行情数据把过去 250 天重算出来，正好用得上。
-
-    本地运行时 history.csv 一直在，所以这里绝大多数时候只是读一个文件。
-
-    fingerprint 这个参数是故意加的，而且函数体里用不到它：Streamlit 会把所有
-    参数算进缓存的钥匙，所以历史表一被改写（定时任务跑完、或你手动跑了
-    run_daily.bat），指纹就变了，缓存自动失效，页面立刻是新数据。
-
-    两种机制各管一件事：
-        指纹   文件一改就立刻生效（本地用得上）
-        TTL    最多每 30 分钟重新检查一次"数据是不是过期了"
-               （云端容器里没人写文件，只能靠它定期复查）
+    指纹参数是缓存钥匙：文件一被改写（定时任务跑完、或点"立即更新"），
+    指纹就变了，缓存自动失效，页面立刻是新数据。
+    本地没有历史文件、云端容器刚重建磁盘时，这里会自己把过去 250 天补出来。
     """
     data = history.load_history()
     if not data.empty:
@@ -73,132 +60,350 @@ def load_history_data(fingerprint: tuple) -> pd.DataFrame:
         if age_days <= FRESH_DAYS:
             return data
 
-    run_daily.main()          # 取数 → 算指标 → 判异常 → 存历史 → 出报告
+    run_daily.main()
     return history.load_history()
 
 
-def level_label(row: pd.Series, name: str) -> str:
-    """把 level 的英文键翻成中文；取不到就显示一个短横。"""
-    value = row.get(f"{name}_level")
-    if isinstance(value, str):
-        return LEVEL_LABELS.get(value, value)
-    return "—"
+# ---------- 小工具 ----------
+def fmt(value, spec: str = ",.2f") -> str:
+    """数字格式化；空值显示成 --，免得表格里出现 nan。"""
+    if value is None or pd.isna(value):
+        return "--"
+    return format(value, spec)
 
 
-def show_sidebar(data: pd.DataFrame) -> None:
-    """侧边栏：手动更新按钮 + 数据说明。"""
+def fmt_pct(value) -> str:
+    """涨跌幅；空值显示成 --。"""
+    if value is None or pd.isna(value):
+        return "--"
+    return f"{value:+.2f}%"
+
+
+def colored_pct(value) -> str:
+    """涨跌幅 + 颜色（涨绿跌红），用在 markdown 里。"""
+    if value is None or pd.isna(value):
+        return "--"
+    color = "green" if value >= 0 else "red"
+    return f":{color}[{value:+.2f}%]"
+
+
+def updated_text(fingerprint: tuple) -> str:
+    """历史表的最后写入时间（用香港时区显示）。"""
+    mtime = fingerprint[0] if fingerprint else 0
+    if not mtime:
+        return "尚未生成"
+    moment = datetime.fromtimestamp(mtime, ZoneInfo(config.TIMEZONE))
+    return moment.strftime("%Y-%m-%d %H:%M")
+
+
+# ---------- 立即更新 ----------
+def run_update() -> None:
+    """跑一遍完整流水线，然后把页面刷新到最新数据。"""
+    with st.spinner("正在取数、算指标、判异常、存历史、出日报 ..."):
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = run_daily.main()
+    st.session_state["run_log"] = buffer.getvalue()
+    st.session_state["run_code"] = code
+    st.cache_data.clear()      # 清缓存，页面立刻读到刚生成的新数据
+    st.rerun()
+
+
+def render_update_button(key: str) -> None:
+    if st.button("立即更新", type="primary", icon=":material/refresh:", key=key):
+        run_update()
+
+
+# ---------- 侧边栏（只放全局信息和设置） ----------
+def render_sidebar(data: pd.DataFrame, result: dict, fingerprint: tuple) -> tuple[int, bool]:
     with st.sidebar:
-        st.header("操作")
-        if st.button("立即更新", type="primary"):
-            with st.spinner("正在取数、算指标、判异常、出日报 ..."):
-                buffer = io.StringIO()
-                with contextlib.redirect_stdout(buffer):
-                    code = run_daily.main()
-            st.session_state["run_log"] = buffer.getvalue()
-            st.session_state["run_code"] = code
-            st.cache_data.clear()   # 清掉缓存，页面才会去读刚生成的新数据
-            st.rerun()
+        st.markdown(f"#### {result['emoji']} {result['label']}")
+        st.progress(result["score"] / 100, text=f"风险评分 {result['score']} / 100")
+        st.caption(result["hint"])
+
+        st.space("small")
+        st.caption(f"**数据更新**　{updated_text(fingerprint)}")
+        if not data.empty:
+            st.caption(f"**最新交易日**　{data.index.max().date()}")
+        st.caption("**数据来源**　Yahoo Finance 日线")
+
+        st.space("small")
+        render_update_button("refresh_sidebar")
 
         code = st.session_state.get("run_code")
         if code == 0:
-            st.success("更新完成")
+            st.success("更新完成", icon=":material/check_circle:")
         elif code is not None:
-            st.error("没拿到数据（退出码 1），看下面的输出")
-
+            st.error("没拿到数据，看下面的输出", icon=":material/error:")
         log = st.session_state.get("run_log")
         if log:
-            with st.expander("上次更新的输出", expanded=False):
+            with st.expander("上次更新输出", expanded=False):
                 st.code(log, language="text")
 
-        st.divider()
-        st.header("数据")
-        st.caption(f"历史表：data/history.csv（{len(data)} 行）")
+        with st.expander("设置", icon=":material/settings:"):
+            card_days = st.segmented_control(
+                "历史日报显示天数", [5, 10, 20], default=10, key="card_days"
+            )
+            show_raw = st.toggle("显示分析数据表", key="show_raw")
+
+    return card_days or 10, bool(show_raw)
+
+
+# ---------- 顶部 ----------
+def render_header(data: pd.DataFrame, result: dict, fingerprint: tuple) -> None:
+    left, right = st.columns([5, 1], vertical_alignment="center")
+    with left:
+        st.title("美股市场监测", icon=":material/monitoring:")
+        pieces = [f"{result['emoji']} {result['label']}"]
         if not data.empty:
-            st.caption(f"最新交易日：{data.index.max().date()}")
-        st.caption(f"数据源：{config.DATA_SOURCE_NOTE}")
-        st.caption("网页只负责展示；每天的数据由 Windows 定时任务更新。")
+            pieces.append(f"最新交易日 {data.index.max().date()}")
+            if (config.today() - data.index.max().date()).days > STALE_DAYS:
+                pieces.append(":orange[⚠ 数据可能偏旧]")
+        pieces.append(f"数据更新于 {updated_text(fingerprint)}")
+        st.caption("　·　".join(pieces))
+    with right:
+        render_update_button("refresh_top")
 
 
-def main() -> None:
-    st.set_page_config(page_title="美股市场监测", page_icon="📈", layout="wide")
-    st.title("美股市场监测")
+# ---------- 第二行：三个 KPI 卡片 ----------
+def render_kpi_card(daily: pd.DataFrame, name: str) -> None:
+    close = daily[f"{name}_close"].iloc[-1]
+    change_abs = daily[f"{name}_change_abs"].iloc[-1]
+    change = daily[f"{name}_change_1d"].iloc[-1]
+    change_5d = daily[f"{name}_change_5d"].iloc[-1]
+    change_20d = daily[f"{name}_change_20d"].iloc[-1]
+    level = daily[f"{name}_level"].iloc[-1] if f"{name}_level" in daily.columns else None
+    sparkline = daily[f"{name}_close"].tail(24).tolist()
 
-    data = load_history_data(history.fingerprint())
-    show_sidebar(data)
-
-    if data.empty:
-        st.warning("还没有历史数据。点左边的「立即更新」跑一次，或者在终端运行 python run_daily.py。")
-        return
-
-    latest = data.iloc[-1]
-    st.caption(
-        f"最新交易日 {data.index.max().date()}　·　"
-        f"共 {len(data)} 个交易日　·　数据源：Yahoo Finance 日线"
-    )
-
-    # ---------- 结论卡片 ----------
-    cards = st.columns(len(config.SYMBOLS))
-    for card, name in zip(cards, config.SYMBOLS):
-        close = latest.get(f"{name}_close")
-        change = latest.get(f"{name}_change_1d")
-        card.metric(
-            label=f"{name}　{level_label(latest, name)}",
-            value="--" if pd.isna(close) else f"{close:,.2f}",
-            delta=None if pd.isna(change) else f"{change:+.2f}%",
+    with st.container(border=True):
+        st.metric(
+            label=f"{market_state.DISPLAY_NAMES[name]}　{LEVEL_LABELS.get(level, '--')}",
+            value=fmt(close),
+            delta=f"{fmt(change_abs, '+,.2f')}　{fmt_pct(change)}",
             # VIX 涨是坏事，颜色反过来，免得"涨了显绿"让人误读
             delta_color="inverse" if name == "VIX" else "normal",
+            chart_data=sparkline,
+            chart_type="line",
+            border=False,
         )
+        st.caption(f"5 日 {fmt_pct(change_5d)}　·　20 日 {fmt_pct(change_20d)}")
+        if name == "VIX":
+            zone_text, zone_color = market_state.vix_zone(close)
+            st.badge(f"风险指标 · {zone_text}", color=zone_color)
 
-    # ---------- 走势 ----------
-    st.subheader("走势")
-    window = st.segmented_control("看多长时间", list(WINDOW_OPTIONS), default=DEFAULT_WINDOW)
-    window = window or DEFAULT_WINDOW     # 取消选中时回到默认值
-    recent = data.tail(WINDOW_OPTIONS[window])
 
-    tabs = st.tabs([*config.SYMBOLS, "标普 vs 纳指"])
-    for tab, name in zip(tabs, config.SYMBOLS):
-        with tab:
-            column = f"{name}_close"
-            series = recent[column].dropna() if column in recent.columns else pd.Series(dtype=float)
-            if series.empty:
-                st.info("这段时间没有数据。")
-                continue
-            st.line_chart(series, height=280)
-            st.caption(
-                f"区间最高 {series.max():,.2f}　最低 {series.min():,.2f}　"
-                f"区间涨跌 {(series.iloc[-1] / series.iloc[0] - 1) * 100:+.2f}%"
-            )
+def render_kpi_cards(daily: pd.DataFrame) -> None:
+    for column, name in zip(st.columns(len(config.SYMBOLS)), config.SYMBOLS):
+        with column:
+            render_kpi_card(daily, name)
 
-    with tabs[-1]:
-        pair = [f"{name}_close" for name in ("SP500", "NDX") if f"{name}_close" in recent.columns]
-        if len(pair) == 2:
-            base = recent[pair].dropna()
-            st.line_chart(base / base.iloc[0] * 100, height=280)
-            st.caption("把区间起点都当成 100，两条线才能放在一起比。VIX 不参与——它的量级和指数完全不同。")
+
+# ---------- 第三行：市场状态 + 今日需要关注 ----------
+def render_state(result: dict) -> None:
+    with st.container(border=True):
+        st.subheader("市场状态")
+        st.markdown(f"## {result['emoji']} {result['label']}")
+        st.progress(result["score"] / 100, text=f"风险评分 {result['score']} / 100")
+        st.caption(result["hint"])
+
+        if result["parts"]:
+            st.markdown("**评分构成**")
+            for part in result["parts"]:
+                st.markdown(f":gray[+{part['points']}]　{part['text']}")
         else:
-            st.info("数据不够，画不了对比图。")
+            st.caption("所有指标都在正常范围，没有加分的风险项。")
 
-    # ---------- 历史日报 ----------
-    st.subheader("历史日报")
-    reports = sorted(config.REPORT_DIR.glob("*.md"), reverse=True)
-    if not reports:
-        st.info("还没有生成过日报。")
-    else:
-        chosen = st.selectbox("选一天看", reports, format_func=lambda path: path.stem)
-        body = chosen.read_text(encoding="utf-8")
-        # 报告里的图片写的是相对路径，在网页里会 404。
-        # 所以把那一行去掉，改用 st.image 直接显示本机的图片文件。
-        body = "\n".join(
-            line for line in body.splitlines() if not line.strip().startswith("![")
+
+def render_attention(result: dict) -> None:
+    with st.container(border=True):
+        st.subheader("今日需要关注")
+        attention = market_state.attention_items(result)
+        if attention:
+            for text in attention:
+                st.markdown(f":orange[⚠ {text}]")
+        else:
+            st.markdown(":green[✓ 今日没有明显异常信号]")
+
+        healthy = [item["text"] for item in result["checks"] if item["ok"] is True]
+        if healthy:
+            st.markdown("**正常项**")
+            for text in healthy:
+                st.caption(f"✓ {text}")
+
+
+# ---------- 第四行：趋势图 ----------
+def build_trend_chart(recent: pd.DataFrame, symbol: str, ma_list: list[str]):
+    """Altair 折线图：真实比例（Y 轴不从 0 起）、鼠标悬停看具体数值。"""
+    frame = recent.reset_index()
+
+    if symbol == "对比":
+        # 归一化：把区间起点都当成 100，两条线才能放在一起比
+        base = recent[["SP500_close", "NDX_close"]].dropna()
+        if base.empty:
+            return None
+        rebased = (base / base.iloc[0] * 100).reset_index()
+        long = rebased.melt(id_vars="date", var_name="series", value_name="value").dropna(subset=["value"])
+        long["series"] = long["series"].map({"SP500_close": "标普 500", "NDX_close": "纳斯达克 100"})
+        color_scale = alt.Scale(
+            domain=["标普 500", "纳斯达克 100"],
+            range=[SYMBOL_COLORS["SP500"], SYMBOL_COLORS["NDX"]],
         )
-        st.markdown(body)
-        picture = chosen.with_suffix(".png")
-        if picture.exists():
-            st.image(str(picture), caption=f"{chosen.stem} 走势图")
+    else:
+        wanted = {f"{symbol}_close": market_state.DISPLAY_NAMES[symbol]}
+        for ma in ma_list:
+            column = f"{symbol}_{ma.lower()}"
+            if column in recent.columns:
+                wanted[column] = ma
+        long = frame.melt(id_vars="date", value_vars=list(wanted), var_name="series", value_name="value")
+        long = long.dropna(subset=["value"])
+        long["series"] = long["series"].map(wanted)
+        colors = [SYMBOL_COLORS.get(symbol, "#1F6FEB")]
+        colors += [MA_COLORS[ma] for ma in ma_list if f"{symbol}_{ma.lower()}" in recent.columns]
+        color_scale = alt.Scale(domain=list(wanted.values()), range=colors)
 
-    # ---------- 原始数据 ----------
-    with st.expander("原始数据（历史表最后 20 行）"):
-        st.dataframe(data.tail(20))
+    return (
+        alt.Chart(long)
+        .mark_line(strokeWidth=1.8)
+        .encode(
+            x=alt.X("date:T", title=None, axis=alt.Axis(format="%m-%d", grid=False, tickCount=6)),
+            y=alt.Y(
+                "value:Q",
+                title=None,
+                scale=alt.Scale(zero=False),      # 关键：不从 0 起，否则小幅波动会被压平
+                axis=alt.Axis(format=",.0f", tickCount=5),
+            ),
+            color=alt.Color(
+                "series:N",
+                scale=color_scale,
+                legend=alt.Legend(title=None, orient="top", direction="horizontal"),
+            ),
+            tooltip=[
+                alt.Tooltip("date:T", title="日期", format="%Y-%m-%d"),
+                alt.Tooltip("series:N", title="系列"),
+                alt.Tooltip("value:Q", title="数值", format=",.2f"),
+            ],
+        )
+        .properties(height=300)
+        .configure_view(strokeOpacity=0)
+        .configure_axis(labelColor="#57606A", labelFontSize=12, domainColor="#E3E8EF", tickColor="#E3E8EF")
+        .configure_legend(labelFontSize=12, symbolSize=60)
+    )
+
+
+def render_trend(daily: pd.DataFrame) -> None:
+    with st.container(border=True):
+        st.subheader("趋势")
+        col1, col2, col3 = st.columns([2, 2, 3], vertical_alignment="bottom")
+        with col1:
+            symbol = st.segmented_control("指标", TREND_OPTIONS, default="SP500", key="trend_symbol")
+        with col2:
+            window = st.segmented_control("区间", list(WINDOWS), default=DEFAULT_WINDOW, key="trend_window")
+        with col3:
+            ma_list = st.pills("均线", MA_OPTIONS, selection_mode="multi", default=["MA20"], key="trend_ma")
+
+        symbol = symbol or "SP500"
+        window = window or DEFAULT_WINDOW
+        ma_list = ma_list or []
+        recent = daily.tail(WINDOWS[window])
+
+        chart = build_trend_chart(recent, symbol, ma_list)
+        if chart is None:
+            st.info("这段时间没有可用数据。")
+            return
+        st.altair_chart(chart)
+
+        if symbol != "对比":
+            series = recent[f"{symbol}_close"].dropna()
+            if not series.empty:
+                st.caption(
+                    f"{market_state.DISPLAY_NAMES[symbol]}　"
+                    f"区间最高 {series.max():,.2f}　最低 {series.min():,.2f}　"
+                    f"区间涨跌 {fmt_pct((series.iloc[-1] / series.iloc[0] - 1) * 100)}"
+                )
+        else:
+            st.caption("两条线都以区间起点为 100，方便比较同期表现。VIX 不参与——它的量级和指数完全不同。")
+
+
+# ---------- 第五行：历史日报 ----------
+def summarize_card(card: dict) -> str:
+    """把一天的信息压成一行：日期、状态、评分、三个指数、信号条数。"""
+    values = []
+    for name in config.SYMBOLS:
+        close, change = card["values"][name]
+        values.append(f"{name} {fmt(close, ',.0f')} {colored_pct(change)}")
+    warnings = card["warnings"]
+    tail = f":orange[{warnings} 条信号]" if warnings else ":green[无异常]"
+    return (
+        f"**{card['day']}**　{card['emoji']} {card['label']}　"
+        f"风险 {card['score']}/100　　" + "　".join(values) + f"　　{tail}"
+    )
+
+
+def render_full_report(day_text: str) -> None:
+    """展开某一天的完整日报（正文 + 走势图）。"""
+    path = config.REPORT_DIR / f"{day_text}.md"
+    if not path.exists():
+        st.caption(f"没有找到 {day_text} 的日报文件（可能那天没生成，或者文件被清理过）。")
+        return
+
+    body = path.read_text(encoding="utf-8")
+    # 报告里的图片是相对路径，网页里会 404；去掉那一行，改用 st.image 直接显示本机图片
+    body = "\n".join(line for line in body.splitlines() if not line.strip().startswith("!["))
+    with st.expander(f"{day_text} 完整日报", expanded=True, icon=":material/description:"):
+        st.markdown(body)
+        picture = path.with_suffix(".png")
+        if picture.exists():
+            st.image(str(picture))
+
+
+def render_history(daily: pd.DataFrame, card_days: int) -> None:
+    cards = market_state.daily_cards(daily, days=card_days)
+    with st.container(border=True):
+        st.subheader("历史日报")
+        st.caption(f"最近 {len(cards)} 个交易日。点右边「查看」展开当天的完整日报。")
+        for card in cards:
+            row = st.columns([12, 1], vertical_alignment="center")
+            with row[0]:
+                st.markdown(summarize_card(card))
+            with row[1]:
+                if st.button("查看", key=f"view_{card['day']}", icon=":material/description:"):
+                    st.session_state["view_day"] = str(card["day"])
+
+        view_day = st.session_state.get("view_day")
+        if view_day:
+            render_full_report(view_day)
+
+
+# ---------- 入口 ----------
+def main() -> None:
+    st.set_page_config(
+        page_title="美股市场监测",
+        page_icon=":material/monitoring:",
+        layout="wide",
+        initial_sidebar_state="collapsed",   # 侧栏默认收起，把宽度留给数据
+    )
+
+    fingerprint = history.fingerprint()
+    data = load_history_data(fingerprint)
+    daily = market_state.build_daily_table(data)
+    result = market_state.assess(daily)
+
+    card_days, show_raw = render_sidebar(data, result, fingerprint)
+    render_header(data, result, fingerprint)
+
+    if data.empty:
+        st.warning("还没有历史数据。点右上角「立即更新」跑一次，或在终端运行 python run_daily.py。")
+        return
+
+    render_kpi_cards(daily)
+    render_state(result)
+    render_attention(result)
+    render_trend(daily)
+    render_history(daily, card_days)
+
+    if show_raw:
+        with st.expander("分析数据表（最后 20 行）", expanded=False):
+            st.dataframe(daily.tail(20))
 
 
 main()

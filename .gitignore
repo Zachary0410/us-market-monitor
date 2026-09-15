@@ -16,6 +16,9 @@ reports/*.png
 # 定时任务的运行日志
 logs/
 
+# 网页的本地密钥（部署时可能会用到，永远不要提交）
+.streamlit/secrets.toml
+
 # 编辑器与系统文件
 .vscode/
 .idea/

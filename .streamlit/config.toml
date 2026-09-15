@@ -1,0 +1,47 @@
+# 设计系统：浅色、克制、专业金融终端风格。
+#
+# 为什么用 config.toml 而不是自定义 CSS：Streamlit 官方明确建议——
+# 原生主题对所有组件一致生效，而且不会因为版本升级把 CSS 选择器搞失效。
+
+[theme]
+base = "light"
+
+# ---------- 底色与文字 ----------
+primaryColor = "#1F6FEB"              # 主色：按钮、选中态、进度条
+backgroundColor = "#FFFFFF"           # 主背景：纯白
+secondaryBackgroundColor = "#F6F8FA"  # 卡片与控件背景：极浅灰
+textColor = "#1A1F2B"                 # 正文：近黑，保证对比度
+borderColor = "#E3E8EF"               # 边框：浅灰，不抢视线
+linkColor = "#1F6FEB"
+
+# ---------- 语义色：涨绿跌红，中性灰黄 ----------
+greenColor = "#1A7F37"
+redColor = "#D1242F"
+orangeColor = "#BC4C00"
+yellowColor = "#9A6700"
+grayColor = "#57606A"
+
+# ---------- 边框与圆角：适度，不夸张 ----------
+baseRadius = "8px"
+buttonRadius = "8px"
+showWidgetBorder = true
+showSidebarBorder = true
+
+# ---------- 字号层级 ----------
+# 页面标题 24 / 模块标题 19 / 小标题 16 / 正文 15 / 辅助 14-13
+baseFontSize = 15
+headingFontSizes = ["24px", "19px", "16px", "15px", "14px", "13px"]
+headingFontWeights = [600, 600, 600, 600, 500, 500]
+
+# ---------- 图表配色：标普=蓝，纳指=绿，VIX=红 ----------
+chartCategoricalColors = ["#1F6FEB", "#1A7F37", "#D1242F", "#8250DF", "#BC4C00", "#57606A", "#0969DA"]
+
+dataframeBorderColor = "#E3E8EF"
+dataframeHeaderBackgroundColor = "#F6F8FA"
+
+# ---------- 侧栏：比主区略深一点点，形成层次 ----------
+[theme.sidebar]
+backgroundColor = "#F6F8FA"
+secondaryBackgroundColor = "#EAEEF2"
+borderColor = "#E3E8EF"
+textColor = "#1A1F2B"
