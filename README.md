@@ -4,11 +4,14 @@
 
 每个交易日收盘后自动取数 → 算指标 → 判异常 → 存历史 → 出日报，并提供一个能 **10 秒看清市场状态**的网页。数据源是 Yahoo Finance 免费接口，不需要 API key，不需要服务器——装好 Python 就能跑。
 
-![走势图示例（项目自动生成的日报图）](docs/chart-preview.png)
+![Dashboard：市场状态、KPI 卡片、趋势图、历史日报、信号复盘](docs/dashboard.png)
 
-<!-- 想加 Dashboard 截图：把网页截图存成 docs/dashboard.png，然后把下面这行取消注释
-![Dashboard](docs/dashboard.png)
--->
+<details>
+<summary>日报里自动生成的走势图（每天收盘后产出）</summary>
+
+![走势图示例](docs/chart-preview.png)
+
+</details>
 
 | 项目 | 内容 |
 | --- | --- |
