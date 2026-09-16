@@ -86,13 +86,22 @@ def _drop_unfinished_session(frame: pd.DataFrame) -> pd.DataFrame:
     规则很简单：美东时间还没过 16:15，当天那根日线一律不要。
     注意这对每天 06:00（香港）的定时任务没有任何影响——那时美东早就收盘了。
     """
-    now_new_york = pd.Timestamp.now(tz="America/New_York")
+    now_new_york = _now_new_york()
     market_closed = (now_new_york.hour, now_new_york.minute) >= (16, 15)
     if market_closed:
         return frame
 
     today_new_york = now_new_york.normalize().tz_localize(None)
     return frame[frame.index < today_new_york]
+
+
+def _now_new_york() -> pd.Timestamp:
+    """当前的美东时间。
+
+    单独抽成一个小函数，是为了测试时能把时间"固定住"——
+    否则"盘中要丢掉当天日线"这条规则没法稳定地测。
+    """
+    return pd.Timestamp.now(tz="America/New_York")
 
 
 def _request(symbol: str, days: int, timeout: int) -> dict:

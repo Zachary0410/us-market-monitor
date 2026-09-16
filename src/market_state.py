@@ -126,6 +126,16 @@ def state_for(score: float) -> str:
     return "panic"
 
 
+def score_row(row: pd.Series) -> int:
+    """按评分曲线算出这一行的分数（0-100）。"""
+    return min(100, int(round(sum(item["points"] for item in _score_parts(row)))))
+
+
+def state_row(row: pd.Series) -> str:
+    """这一行属于哪个等级。"""
+    return state_for(score_row(row))
+
+
 def _score_parts(row: pd.Series) -> list[dict]:
     """拆出每一分的来源。返回的每一项都能直接显示在界面上。"""
     parts: list[dict] = []
@@ -260,7 +270,7 @@ def assess(daily: pd.DataFrame) -> dict:
 
     row = daily.iloc[-1]
     parts = _score_parts(row)
-    score = min(100, int(round(sum(item["points"] for item in parts))))
+    score = score_row(row)
     state = state_for(score)
     info = STATES[state]
 
@@ -289,7 +299,7 @@ def daily_cards(daily: pd.DataFrame, days: int = 7) -> list[dict]:
     cards: list[dict] = []
     for day, row in daily.tail(days).iloc[::-1].iterrows():
         parts = _score_parts(row)
-        score = min(100, int(round(sum(item["points"] for item in parts))))
+        score = score_row(row)
         state = state_for(score)
         info = STATES[state]
         cards.append(

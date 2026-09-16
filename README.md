@@ -1,8 +1,29 @@
-# 美股市场监测（第一阶段）
+# 美股市场监测
 
-每天回答三个问题：**S&P 500、Nasdaq 100、VIX 现在什么情况？有没有出现异常？**
+每天回答三个问题：**S&P 500、Nasdaq 100、VIX 现在什么情况？有没有出现异常？现在算 Risk-on 还是 Risk-off？**
 
-第一阶段做五步：取数 → 算指标 → 判断异常 → 存历史 → 出日报（带走势图）。不做实时行情，不做回测，不做自动推送。
+每个交易日收盘后自动取数 → 算指标 → 判异常 → 存历史 → 出日报，并提供一个能 **10 秒看清市场状态**的网页。数据源是 Yahoo Finance 免费接口，不需要 API key，不需要服务器——装好 Python 就能跑。
+
+![走势图示例（项目自动生成的日报图）](docs/chart-preview.png)
+
+<!-- 想加 Dashboard 截图：把网页截图存成 docs/dashboard.png，然后把下面这行取消注释
+![Dashboard](docs/dashboard.png)
+-->
+
+| 项目 | 内容 |
+| --- | --- |
+| 技术栈 | Python 3.13 · pandas · Streamlit · Altair · matplotlib |
+| 数据源 | Yahoo Finance 日线（免费、无需 API key） |
+| 监控标的 | 标普 500 · 纳斯达克 100 · VIX |
+| 自动化 | Windows 任务计划程序，周二至周六 06:00（香港时间）无人值守 |
+| 测试 | 72 条自动化测试，不联网、不碰真实数据；每次 push 由 GitHub Actions 自动跑 |
+
+**这个项目的几个特点**
+
+- **数据可靠**：取数失败会自动用本地缓存兜底，**并在报告里写明"这次数据偏旧"**；盘中会丢掉"还没收盘的今天"，避免把半根 K 线当成完整一天
+- **结论可解释**：风险评分是六项加出来的，**每一分都能在界面上看到出处**，不是黑箱
+- **结果可验证**：内置"信号复盘"，用历史数据回算这些信号出现之后市场到底怎么走
+- **无人值守**：定时任务 + 数据自愈（本地文件丢了能自己重建 250 天历史）+ 失败不会覆盖当天已有的好报告
 
 项目位置：`F:\codex\2026-09-14\new-chat-4\outputs\us-market-monitor`
 
@@ -36,6 +57,8 @@ src/report.py   写成 reports\2026-09-14.md（里面引用那张图），并打
 us-market-monitor\
 ├── README.md            你正在看的这份说明书
 ├── requirements.txt     需要安装哪些第三方库
+├── requirements-dev.txt 只有开发和测试才需要的依赖（pytest）
+├── pytest.ini           测试配置
 ├── .gitignore           告诉 Git 哪些文件不用管
 ├── config.py            ★ 唯一的配置开关（标的、阈值、路径）
 ├── run_daily.py         ★ 每天运行的入口
@@ -52,7 +75,14 @@ us-market-monitor\
 │   ├── history.py       历史层：每天的结论攒成一张表（data\history.csv）
 │   ├── chart.py         图表层：历史表 → reports\YYYY-MM-DD.png
 │   ├── market_state.py  展示层分析：风险评分、市场状态、✓/⚠ 清单（只给网页用）
+│   ├── signal_stats.py  信号复盘：这些信号出现之后市场怎么走（只给网页用）
 │   └── report.py        输出层：结论 + 走势图 → Markdown 日报
+├── tests\               自动化测试（72 条，不联网、不碰真实数据）
+│   ├── conftest.py      公共夹具：临时目录 + 假日线数据
+│   └── test_*.py        按模块拆分的测试
+├── .github\
+│   └── workflows\tests.yml   每次 push 自动跑测试
+├── docs\                文档用图（README 里展示的截图）
 ├── data\                数据和历史表（CSV，不进 Git）
 │   ├── .gitkeep         占位文件，让 Git 保留这个空目录
 │   ├── SP500.csv 等     每天刷新的原始日线缓存
@@ -75,6 +105,7 @@ us-market-monitor\
 | `run_daily.bat` | 定时任务实际调用的东西：切到项目目录 → 跑 `run_daily.py` → 把输出追加到 `logs\scheduled.log`，并把退出码原样传出去。双击它也能手动跑一次。 | 几乎不改（升级 Python 版本时要改里面的路径） |
 | `app.py` | Streamlit 网页（Dashboard）。读 `data\history.csv` 和 `reports\*.md` 做展示，不碰数据获取逻辑；「立即更新」按钮调用 `run_daily.main()`，复用同一条流水线。 | 想换页面布局时 |
 | `src/market_state.py` | 展示层分析：把每天的行情算成风险评分（0-100）、市场状态（Risk-on / Neutral / Risk-off / Panic）和 ✓/⚠ 清单。**只被网页使用**，不写回任何文件，日报流水线完全不受影响。 | 想调风险评分的权重时 |
+| `src/signal_stats.py` | 信号复盘：按"当天结论"和"风险等级"分组，统计之后 1 / 5 / 20 个交易日标普 500 的涨跌。用来检验阈值有没有意义。**只读历史表**，不写文件。 | 想换个统计口径时 |
 | `.streamlit/config.toml` | 网页的设计系统：配色、字号层级、圆角、边框、侧栏样式。用 Streamlit 原生主题实现，不写自定义 CSS（CSS 会因为版本升级失效）。 | 想改配色或字号时 |
 | `run_web.bat` | 双击它打开网页：启动本地服务并打开浏览器。**窗口关掉服务就停**。已经有一个服务在跑时会提示"ALREADY running"，不会重复启动。 | 几乎不改（升级 Python 版本时要改里面的路径） |
 | `src/fetch.py` | **唯一会上网的文件**。负责请求数据、校验数据、整理成统一格式、存一份 CSV 缓存。 | 换数据源时 |
@@ -85,6 +116,9 @@ us-market-monitor\
 | `src/report.py` | 只管展示，不算数字也不做判断。把指标、结论和走势图排成一份 Markdown 日报，写入 `reports\` 并打印到终端。 | 想换报告样子时 |
 | `requirements.txt` | 记录项目依赖（`pandas`、`requests`、`matplotlib`、`streamlit`）。 | 加库时 |
 | `.gitignore` | 排除缓存、虚拟环境、生成的数据和报告，避免把垃圾提交进 Git。 | 几乎不改 |
+| `tests\` | 72 条自动化测试。**不联网、不碰真实的 data/ 和 reports/**（会被重定向到临时目录），几秒钟跑完。每个踩过的坑都有一条对应的测试，比如"同一天只留一行""报告文件名用交易日" | 加新功能时同步加 |
+| `.github\workflows\tests.yml` | GitHub Actions：每次 push 自动跑一遍测试，结果在仓库的 Actions 标签页看 | 几乎不改 |
+| `requirements-dev.txt` | 只有开发和测试才要装的依赖（pytest）。部署到云端不需要。 | 加测试工具时 |
 | `data\.gitkeep`、`reports\.gitkeep` | 空目录 Git 不会保存，用占位文件保住目录结构。 | 不改 |
 
 ---
@@ -180,6 +214,22 @@ python run_daily.py
 - **退出码**：0 = 正常，1 = 完全没拿到数据。以后挂到定时任务上，就靠它判断当天有没有出问题。
 
 Python 3.13.15 和依赖库已经装好，直接用 `python` 命令即可。
+
+### 跑测试
+
+```powershell
+python -m pip install -r requirements-dev.txt
+python -m pytest
+```
+
+72 条测试，两秒跑完。设计上有两条硬规矩：
+
+1. **不联网**——所有外部请求都打桩，所以断网也能跑，不会因为 Yahoo 抽风而失败
+2. **不碰真实数据**——测试会把数据目录重定向到临时文件夹，跑一百遍也不会动你的 `data\history.csv`
+
+每个踩过的坑都留了一条对应的测试：同一天重复运行只能留一行、报告文件名必须用交易日、盘中要丢掉当天的半根 K 线、VIX 不该套用指数的阈值……这样以后改代码时，这些坑不会第二次踩进去。
+
+推到 GitHub 后，每次 push 会自动跑一遍（见仓库的 **Actions** 标签页）。
 
 > 想单独验证某一层，在**项目根目录**用 `-m` 方式跑：
 >
@@ -348,11 +398,14 @@ streamlit run app.py
 5. ✅ `chart.py` —— 把历史画成走势图，警报日涂色
 6. ✅ `report.py` —— 生成带走势图的 Markdown 日报
 7. ✅ `run_daily.py` + `run_daily.bat` —— 一键跑完，并且已经挂上 Windows 定时任务
-8. ✅ `app.py` —— Streamlit 网页，看走势和历史日报，带「立即更新」按钮
+8. ✅ `app.py` —— Streamlit Dashboard：KPI 卡片、市场状态、趋势图、历史日报、「立即更新」
+9. ✅ `market_state.py` —— 风险评分（可解释）+ 市场状态 + ✓/⚠ 清单
+10. ✅ `signal_stats.py` —— 信号复盘：这些信号出现之后市场到底怎么走
+11. ✅ `tests\` + GitHub Actions —— 72 条自动化测试，每次 push 自动跑
 
 接下来可以做的事（大致按价值排序）：
 
-1. **自动提醒** —— 出现警报时给你发条消息（邮件 / 微信 / 钉钉），不用自己去看
-2. **阈值再校准** —— 现在只是数了数触发频率，还能进一步看"这些信号有没有用"（比如警报之后几天市场到底怎么走）
+1. **把信号复盘的结果反馈到阈值上** —— 现在能看到"关注之后 5 日平均 +1.23%"这种反直觉的结果，下一步是据此调整或重新定义信号的用途（它是描述"波动加大"，不等于"接下来会跌"）
+2. **自动提醒** —— 出现警报时给你发条消息（邮件 / 微信 / 钉钉），不用自己去看
 3. **多标的** —— 加黄金、美元指数、美债收益率，`config.py` 里加几行就行
 4. **云端运行** —— 放到一台常开的机器上，笔记本关机时也能照常出日报

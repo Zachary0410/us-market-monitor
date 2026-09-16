@@ -28,7 +28,7 @@ import streamlit as st
 
 import config
 import run_daily
-from src import history, market_state, signals
+from src import history, market_state, signal_stats, signals
 
 # ---------- 常量 ----------
 CACHE_TTL = "30m"                 # 缓存的兜底寿命（本地靠文件指纹失效，云端靠它定期复查）
@@ -374,6 +374,30 @@ def render_history(daily: pd.DataFrame, card_days: int) -> None:
             render_full_report(view_day)
 
 
+def render_signal_review(data: pd.DataFrame) -> None:
+    """信号复盘：这些信号出现之后，市场到底怎么走。"""
+    with st.container(border=True):
+        st.subheader("信号复盘")
+        st.caption(
+            "用现有历史回算：各类信号出现之后，标普 500 之后几天怎么走。"
+            "这是用来检验阈值的，不是预测。"
+        )
+        rows = signal_stats.review_rows(data)
+        if not rows:
+            st.caption("历史数据还不够，暂时算不出分组统计。")
+            return
+
+        table = pd.DataFrame(rows)
+        for column in ("之后 1 日", "之后 5 日", "之后 20 日", "之后 5 日中位数"):
+            table[column] = table[column].map(lambda value: f"{value:+.2f}%")
+        table["之后 5 日下跌占比"] = table["之后 5 日下跌占比"].map(lambda value: f"{value:.0f}%")
+        st.dataframe(table, hide_index=True)
+
+        note = signal_stats.small_sample_note(rows)
+        if note:
+            st.caption(f":orange[⚠ {note}]")
+
+
 # ---------- 入口 ----------
 def main() -> None:
     st.set_page_config(
@@ -400,6 +424,7 @@ def main() -> None:
     render_attention(result)
     render_trend(daily)
     render_history(daily, card_days)
+    render_signal_review(data)
 
     if show_raw:
         with st.expander("分析数据表（最后 20 行）", expanded=False):
