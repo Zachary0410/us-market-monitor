@@ -1,6 +1,7 @@
 # Python 运行时产生的缓存
 __pycache__/
 *.py[cod]
+.pytest_cache/
 
 # 以后可能会用的虚拟环境
 .venv/
